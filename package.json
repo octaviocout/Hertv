@@ -1,0 +1,11 @@
+{
+  "name": "hertv",
+  "version": "1.0.0",
+  "description": "HerTV - A simple TV channel listing API",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "dependencies": {}
+}
