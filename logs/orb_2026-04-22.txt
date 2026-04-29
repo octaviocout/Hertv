@@ -1,0 +1,25 @@
+[10:32:14] [INFO    ] Logger inicializado — archivo: logs/orb_2026-04-22.txt
+[10:32:14] [INFO    ] ORB definido — High: 38420  Low: 38285  Rango: 135 pts
+[10:32:14] [INFO    ] Bias: ALCISTA (vela verde) — solo LONG habilitado
+[10:32:14] [INFO    ] ORB definido — High: 38450  Low: 38250  Rango: 200 pts
+[10:32:14] [INFO    ] Bias: BAJISTA (vela roja) — solo SHORT habilitado
+[10:32:14] [WARNING ] ORB inválido — Rango ORB muy pequeño: 30 pts (mínimo 100). Sesión saltada.
+[10:32:14] [WARNING ] ORB inválido — Rango ORB muy grande: 450 pts (máximo 350). Sesión saltada.
+[10:32:14] [INFO    ] ORB definido — High: 38420  Low: 38285  Rango: 135 pts
+[10:32:14] [INFO    ] Bias: ALCISTA (vela verde) — solo LONG habilitado
+[10:32:14] [INFO    ] Ruptura LONG confirmada sobre 38420 — vela 21:45
+[10:32:14] [INFO    ] Activando modo espera de retesteo...
+[10:32:14] [INFO    ] ORB definido — High: 38420  Low: 38285  Rango: 135 pts
+[10:32:14] [INFO    ] Bias: ALCISTA (vela verde) — solo LONG habilitado
+[10:32:14] [INFO    ] Ruptura LONG confirmada sobre 38420 — vela 21:45
+[10:32:14] [INFO    ] Activando modo espera de retesteo...
+[10:32:14] [DEBUG   ] Vela 22:00 — cuerpo insuficiente (0.50 ≤ 0.5)
+[10:32:14] [DEBUG   ] Vela 22:15 — cuerpo insuficiente (0.50 ≤ 0.5)
+[10:32:14] [DEBUG   ] Vela 22:30 — cuerpo insuficiente (0.50 ≤ 0.5)
+[10:32:14] [INFO    ] Fallback LONG activado — 3 velas sin retesteo, precio sigue sobre ORB High — entrando a mercado en 38530
+[10:32:14] [INFO    ] ORB definido — High: 38450  Low: 38250  Rango: 200 pts
+[10:32:14] [INFO    ] Bias: BAJISTA (vela roja) — solo SHORT habilitado
+[10:32:14] [INFO    ] ORB definido — High: 38420  Low: 38285  Rango: 135 pts
+[10:32:14] [INFO    ] Bias: ALCISTA (vela verde) — solo LONG habilitado
+[10:32:14] [INFO    ] Trade completado — sesión finalizada para hoy.
+[10:32:14] [INFO    ] ORB Engine reseteado para nueva sesión.
