@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 SESSION_OPEN = time(9, 30)
 SESSION_CLOSE = time(16, 0)
-OBM_WINDOW_END = time(9, 45)    # stop looking for new OBM setups after this time
+OBM_WINDOW_END = time(10, 30)   # extended: Fede takes setups up to ~10:30 if clean
 
 
 class TradeDirection(Enum):
@@ -134,10 +134,10 @@ class OBMStrategy:
         initial_risk_pct: float = 0.005,
         scale_risk_pct: float = 0.003,
         daily_loss_limit: float = 0.02,
-        swing_lookback: int = 5,
-        smt_tolerance: float = 0.002,
+        swing_lookback: int = 3,          # lowered from 5: needs fewer bars to form a swing
+        smt_tolerance: float = 0.004,     # raised from 0.002: less strict divergence filter
         fvg_atr_multiplier: float = 0.25,
-        be_trigger_ratio: float = 0.5,    # move SL to BE after price travels X% toward TP
+        be_trigger_ratio: float = 0.5,
     ):
         self.initial_risk_pct = initial_risk_pct
         self.scale_risk_pct = scale_risk_pct
@@ -197,6 +197,13 @@ class OBMStrategy:
         )
         self._structure_events = detect_structure(nq_aligned, "1m", self.swing_lookback)
         update_fvg_status(self._nq_fvgs, nq_aligned)
+
+        # Pre-populate buffer with the last _buffer_max bars of seed data
+        # so the rolling window already has context when the first live bar arrives
+        tail = nq_aligned.iloc[-self._buffer_max:]
+        es_tail = es_aligned.iloc[-self._buffer_max:]
+        for i in range(len(tail)):
+            self._push_buffer(tail.index[i], tail.iloc[i], es_tail.iloc[i])
 
         # Build pre-session levels from 15m + 5m
         self._presession = build_presession_levels(
@@ -288,18 +295,19 @@ class OBMStrategy:
         new_smt = detect_smt_divergence(nq_buf_df, es_buf_df, self.swing_lookback, self.smt_tolerance)
         self._smt_signals.extend(new_smt)
 
-        smt = latest_smt(self._smt_signals, before=ts, max_bars_ago=8, bar_interval_minutes=1)
+        # Look back up to 30 bars (~30 min) for a valid SMT signal
+        smt = latest_smt(self._smt_signals, before=ts, max_bars_ago=30, bar_interval_minutes=1)
         if smt is None:
             return None
 
-        # Check that the SMT sweep coincides with a pre-session level (liquidity grab)
-        if not self._smt_near_presession_level(smt):
+        # Pre-session level filter: relaxed to 1% tolerance
+        if not self._smt_near_presession_level(smt, tolerance_pct=0.01):
             return None
 
-        # Detect ChoCh after the sweep
+        # Detect ChoCh after the sweep — look back 30 bars
         new_structure = detect_structure(nq_buf_df, "1m", self.swing_lookback)
         self._structure_events.extend(new_structure)
-        choch = latest_choch(self._structure_events, before=ts, max_bars_ago=8, bar_interval_minutes=1)
+        choch = latest_choch(self._structure_events, before=ts, max_bars_ago=30, bar_interval_minutes=1)
         if choch is None:
             return None
 
@@ -587,7 +595,7 @@ class OBMStrategy:
         es_df = pd.DataFrame(self._es_buffer, index=self._buffer_ts)
         return nq_df, es_df
 
-    def _smt_near_presession_level(self, smt: SMTSignal, tolerance_pct: float = 0.003) -> bool:
+    def _smt_near_presession_level(self, smt: SMTSignal, tolerance_pct: float = 0.01) -> bool:
         """Return True if the SMT swept level is within tolerance of a pre-session level."""
         if self._presession is None:
             return True  # no pre-session data — don't filter
