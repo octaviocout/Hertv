@@ -8,6 +8,12 @@ Bearish FVG: 3-candle pattern where candle[i-2].low > candle[i].high
              Gap zone = [candle[i].high, candle[i-2].low]
 
 IFVG: An FVG that price has fully closed through — it now acts as opposing S/R.
+
+Noise filter (Fede's discretion translated to code):
+  No fixed tick minimum was given in the video — he filters by "feel".
+  We approximate this with an ATR-based filter: an FVG is only accepted if
+  its gap size >= ATR(14) * atr_multiplier. This removes micro-gaps on
+  1m/30s bars that are just normal tick noise.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+import numpy as np
 import pandas as pd
 
 
@@ -50,26 +57,56 @@ class FVG:
         return f"{kind}({self.type.value} | {self.bottom:.2f}-{self.top:.2f} @ {self.formed_at})"
 
 
-def detect_fvgs(df: pd.DataFrame, timeframe: str = "5m", min_size: float = 0.0) -> list[FVG]:
+def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """ATR using Wilder's smoothing (standard)."""
+    high = df["high"]
+    low = df["low"]
+    prev_close = df["close"].shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / period, adjust=False).mean()
+
+
+def detect_fvgs(
+    df: pd.DataFrame,
+    timeframe: str = "5m",
+    min_size: float = 0.0,
+    atr_multiplier: float = 0.25,
+    atr_period: int = 14,
+) -> list[FVG]:
     """
     Scan a OHLCV DataFrame and return all FVGs found.
 
     Args:
         df: DataFrame with columns open/high/low/close
         timeframe: label stored on each FVG for reference
-        min_size: minimum gap size in price units to filter noise
+        min_size: hard minimum gap size in price points (fallback if ATR unavailable)
+        atr_multiplier: FVG gap must be >= ATR * this value to pass noise filter.
+                        0.25 works well for 1m NQ bars (~2-3 points on average).
+                        Increase to 0.5 for fewer but higher-quality setups.
+        atr_period: ATR calculation period
     """
     fvgs: list[FVG] = []
-    closes = df["close"].values
+
+    if len(df) < atr_period + 2:
+        return fvgs
+
     highs = df["high"].values
     lows = df["low"].values
     timestamps = df.index
+    atr_values = compute_atr(df, atr_period).values
 
     for i in range(2, len(df)):
+        atr = atr_values[i]
+        dynamic_min = max(min_size, atr * atr_multiplier) if not np.isnan(atr) else min_size
+
         # Bullish FVG
         if highs[i - 2] < lows[i]:
             size = lows[i] - highs[i - 2]
-            if size >= min_size:
+            if size >= dynamic_min:
                 fvgs.append(FVG(
                     type=FVGType.BULLISH,
                     top=lows[i],
@@ -81,7 +118,7 @@ def detect_fvgs(df: pd.DataFrame, timeframe: str = "5m", min_size: float = 0.0) 
         # Bearish FVG
         if lows[i - 2] > highs[i]:
             size = lows[i - 2] - highs[i]
-            if size >= min_size:
+            if size >= dynamic_min:
                 fvgs.append(FVG(
                     type=FVGType.BEARISH,
                     top=lows[i - 2],

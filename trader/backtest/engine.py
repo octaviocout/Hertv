@@ -111,45 +111,46 @@ class BacktestResults:
 
 def run_backtest(
     account_value: float = 10_000.0,
-    period: str = "30d",
+    period: str = "5d",
     initial_risk_pct: float = 0.005,
     scale_risk_pct: float = 0.003,
     daily_loss_limit_pct: float = 0.02,
     swing_lookback: int = 5,
     smt_tolerance: float = 0.002,
-    execution_tf: str = "1m",
-    context_tf: str = "5m",
+    fvg_atr_multiplier: float = 0.25,
 ) -> BacktestResults:
     """
     Run a full backtest over historical data.
 
     Args:
         account_value: starting account size in USD
-        period: yfinance period string e.g. "30d", "60d" (max ~60d for 1m data)
-        execution_tf: bar interval for strategy execution (default 1m)
-        context_tf: bar interval for SMC context (FVG/OB detection, default 5m)
+        period: yfinance period string — max 7d for 1m data, 60d for 5m/15m
     """
-    logger.info("Fetching data: NQ + ES @ %s for %s", execution_tf, period)
-    nq_data, es_data = fetch_nq_es(execution_tf, period=period)
+    logger.info("Fetching 1m, 5m, 15m data for NQ + ES — period=%s", period)
 
-    # Align timestamps
-    nq_df, es_df = align_bars(nq_data, es_data)
+    nq_1m, es_1m = fetch_nq_es("1m", period=period)
+    nq_5m, es_5m = fetch_nq_es("5m", period=period)
+    nq_15m, _    = fetch_nq_es("15m", period=period)
 
-    # Filter to session hours
-    nq_session = session_bars(nq_df)
-    es_session = session_bars(es_df)
+    nq_df_1m, es_df_1m = align_bars(nq_1m, es_1m)
+
+    # Session-only 1m bars
+    nq_session = session_bars(nq_df_1m)
+    es_session = session_bars(es_df_1m)
     common_idx = nq_session.index.intersection(es_session.index)
     nq_session = nq_session.loc[common_idx]
     es_session = es_session.loc[common_idx]
+    logger.info("1m session bars loaded: %d", len(nq_session))
 
-    logger.info("Bars loaded: %d", len(nq_session))
+    # Seed (first quarter of 1m data for SMC initialization)
+    seed_size = min(len(nq_session) // 4, 390)   # ~1 session = 390 bars
+    nq_seed_1m = nq_session.iloc[:seed_size].copy()
+    nq_seed_1m.index = nq_seed_1m.index.tz_convert("UTC")
+    es_seed_1m = es_session.iloc[:seed_size].copy()
+    es_seed_1m.index = es_seed_1m.index.tz_convert("UTC")
 
-    # Build context from first half of data (walk-forward seed)
-    seed_size = min(len(nq_session) // 4, 500)
-    nq_seed = nq_session.iloc[:seed_size].copy()
-    nq_seed.index = nq_seed.index.tz_convert("UTC")
-    es_seed = es_session.iloc[:seed_size].copy()
-    es_seed.index = es_seed.index.tz_convert("UTC")
+    # First trading date (for pre-session levels)
+    first_ts = nq_session.index[seed_size]
 
     instrument = recommended_instrument(account_value)
     risk_config = RiskConfig(
@@ -167,8 +168,21 @@ def run_backtest(
         daily_loss_limit=daily_loss_limit_pct,
         swing_lookback=swing_lookback,
         smt_tolerance=smt_tolerance,
+        fvg_atr_multiplier=fvg_atr_multiplier,
     )
-    strategy.initialize(nq_seed, es_seed, execution_tf)
+
+    # Build 5m/15m context DataFrames with UTC index for initialize()
+    nq_5m_df = nq_5m.df.copy()
+    nq_15m_df = nq_15m.df.copy()
+
+    strategy.initialize(
+        nq_hist_1m=nq_seed_1m,
+        es_hist_1m=es_seed_1m,
+        nq_hist_15m=nq_15m_df,
+        es_hist_15m=nq_15m_df,   # use NQ proxy — ES 15m not fetched separately
+        nq_hist_5m=nq_5m_df,
+        session_date=first_ts,
+    )
 
     results = BacktestResults(account_start=account_value, period=period)
     current_account = account_value
