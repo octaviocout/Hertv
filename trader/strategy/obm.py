@@ -39,7 +39,9 @@ import pandas as pd
 from trader.smc.fvg import FVG, FVGType, detect_fvgs, update_fvg_status, nearest_fvg
 from trader.smc.order_blocks import OrderBlock, OBType, detect_order_blocks, update_ob_status, nearest_ob
 from trader.smc.smt import SMTSignal, SMTType, detect_smt_divergence, latest_smt
-from trader.smc.structure import StructureEvent, StructureType, detect_structure, latest_choch
+from trader.smc.structure import (
+    StructureEvent, StructureType, detect_structure, latest_choch, detect_local_choch,
+)
 from trader.smc.liquidity import (
     PreSessionLevels, LiquidityLevel,
     build_presession_levels, mark_swept_levels, get_dol_target,
@@ -304,9 +306,10 @@ class OBMStrategy:
         if not self._smt_near_presession_level(smt, tolerance_pct=0.01):
             return None
 
-        # Detect ChoCh after the sweep — look back 30 bars
-        new_structure = detect_structure(nq_buf_df, "1m", self.swing_lookback)
-        self._structure_events.extend(new_structure)
+        # Detect local ChoCh after the sweep (micro-reversal on 1m/30s)
+        # Uses rolling window instead of global trend — matches Fede's actual entry trigger
+        local_chochs = detect_local_choch(nq_buf_df, "1m", window=15, swing_lookback=2)
+        self._structure_events.extend(local_chochs)
         choch = latest_choch(self._structure_events, before=ts, max_bars_ago=30, bar_interval_minutes=1)
         if choch is None:
             return None

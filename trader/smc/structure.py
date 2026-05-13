@@ -166,6 +166,90 @@ def latest_choch(
     return recent[-1] if recent else None
 
 
+def detect_local_choch(
+    df: pd.DataFrame,
+    timeframe: str = "1m",
+    window: int = 15,
+    swing_lookback: int = 2,
+) -> list[StructureEvent]:
+    """
+    Detect ChoCh within a rolling local window — designed for micro-timeframe
+    entry confirmation after a liquidity sweep.
+
+    This is what Fede actually looks for: after a sweep at 9:30, price makes a
+    short-term reversal breaking above/below the most recent local swing within
+    the last `window` bars. This is NOT a global trend change — it's a local
+    structural break that signals the sweep has failed and price is reversing.
+
+    Generates many more signals than detect_structure() which tracks global trend.
+    """
+    from trader.smc.structure import find_swing_lows_arr, find_swing_highs_arr
+
+    events: list[StructureEvent] = []
+    closes = df["close"].values
+    highs = df["high"].values
+    lows = df["low"].values
+    timestamps = df.index
+
+    for i in range(window + swing_lookback, len(df)):
+        sub_highs = highs[max(0, i - window): i]
+        sub_lows = lows[max(0, i - window): i]
+        sub_ts = timestamps[max(0, i - window): i]
+
+        close = closes[i]
+        ts = timestamps[i]
+
+        # Local swing high = highest high in the window that has lower highs on both sides
+        local_sh = _local_swing_high(sub_highs, swing_lookback)
+        local_sl = _local_swing_low(sub_lows, swing_lookback)
+
+        # Bullish ChoCh: close breaks above local swing high
+        if local_sh is not None and close > local_sh:
+            events.append(StructureEvent(
+                type=StructureType.CHOCH_BULLISH,
+                timestamp=ts,
+                broken_level=local_sh,
+                close_price=close,
+                timeframe=timeframe,
+            ))
+
+        # Bearish ChoCh: close breaks below local swing low
+        if local_sl is not None and close < local_sl:
+            events.append(StructureEvent(
+                type=StructureType.CHOCH_BEARISH,
+                timestamp=ts,
+                broken_level=local_sl,
+                close_price=close,
+                timeframe=timeframe,
+            ))
+
+    return events
+
+
+def _local_swing_high(highs: "np.ndarray", lookback: int) -> Optional[float]:
+    """Return the most recent confirmed swing high in the array."""
+    import numpy as np
+    if len(highs) < lookback * 2 + 1:
+        return None
+    for i in range(len(highs) - lookback - 1, lookback - 1, -1):
+        window = highs[max(0, i - lookback): i + lookback + 1]
+        if highs[i] == window.max():
+            return float(highs[i])
+    return None
+
+
+def _local_swing_low(lows: "np.ndarray", lookback: int) -> Optional[float]:
+    """Return the most recent confirmed swing low in the array."""
+    import numpy as np
+    if len(lows) < lookback * 2 + 1:
+        return None
+    for i in range(len(lows) - lookback - 1, lookback - 1, -1):
+        window = lows[max(0, i - lookback): i + lookback + 1]
+        if lows[i] == window.min():
+            return float(lows[i])
+    return None
+
+
 def current_trend(events: list[StructureEvent]) -> Trend:
     """Infer current trend from the last structure event."""
     if not events:

@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.WARNING)
 from trader.data.feed import fetch_nq_es, align_bars, session_bars
 from trader.smc.fvg import detect_fvgs
 from trader.smc.smt import detect_smt_divergence, find_swing_lows, find_swing_highs
-from trader.smc.structure import detect_structure
+from trader.smc.structure import detect_structure, detect_local_choch
 from trader.smc.liquidity import build_presession_levels
 
 
@@ -54,12 +54,18 @@ def run():
     for f in fvgs[:5]:
         print(f"  {f}")
 
-    # --- Structure ---
+    # --- Structure (global) ---
     structure = detect_structure(nq_s, "1m", swing_lookback=3)
     chochs = [e for e in structure if e.is_choch]
     bos = [e for e in structure if e.is_bos]
-    print(f"\n[Structure] Total={len(structure)} | ChoCh={len(chochs)} BOS={len(bos)}")
-    for e in chochs[:5]:
+    print(f"\n[Structure global] Total={len(structure)} | ChoCh={len(chochs)} BOS={len(bos)}")
+
+    # --- Local ChoCh (what the OBM engine uses) ---
+    local_ch = detect_local_choch(nq_s, "1m", window=15, swing_lookback=2)
+    local_bull = [e for e in local_ch if e.type.value == "choch_bullish"]
+    local_bear = [e for e in local_ch if e.type.value == "choch_bearish"]
+    print(f"[Structure local] ChoCh={len(local_ch)} | Bullish={len(local_bull)} Bearish={len(local_bear)}")
+    for e in local_ch[:5]:
         print(f"  {e}")
 
     # --- Pre-session levels ---
