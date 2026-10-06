@@ -1,25 +1,32 @@
 # SPEC — Sistema de señales iFVG/OIM para MNQ/ES
 
-**Estado:** BORRADOR v0.1 — pendiente de aprobación. No se escribe código hasta aprobar Spec → Arquitectura → Plan.
+**Estado:** BORRADOR v0.2 (Tradeify 50K eval) — pendiente de aprobación. No se escribe código hasta aprobar Spec → Arquitectura → Plan.
 **Convención:** todo valor marcado `⟦PENDIENTE: …⟧` lo tiene que definir el trader. El sistema **no arranca** (falla en validación de config) si queda algún pendiente sin completar.
 
 ---
 
-## 0. Requisito previo (bloqueante)
+## 0. Cuenta y reglas de la firma (bloqueante)
 
-Antes de fijar cualquier parámetro de riesgo, el trader verifica en el sitio oficial de Apex Trader Funding las reglas **vigentes** y las registra en `config/apex_rules.yaml` con fecha de verificación y URL:
+**Firma:** Tradeify · **Cuenta:** 50K · **Fase:** evaluación · **Modo:** solo alertas, el trader ejecuta manualmente.
+**Plan:** ⟦PENDIENTE: Select / Growth / Lightning / otro⟧. Cambian el drawdown, el DLL y la consistencia.
 
-| Regla | Qué verificar | Valor |
+Valores de referencia encontrados en fuentes de terceros (help.tradeify.co no fue accesible desde este entorno). **No son vinculantes**: las fuentes se contradicen y el trader los confirma en el sitio oficial antes de cargarlos en `config/firm_rules.yaml`, con fecha de verificación y URL.
+
+| Regla | Referencia de terceros (Select 50K salvo que se indique) | Confirmado |
 |---|---|---|
-| Automatización | Qué está permitido en PA/Live (alertas, herramientas semiautomáticas, copiadores) | ⟦PENDIENTE⟧ |
-| Trailing drawdown | Monto, tipo (intradía sobre equity no realizada vs. EOD), cuándo se congela | ⟦PENDIENTE⟧ |
-| Límite diario (DLL) | Si aplica a tu tipo de cuenta y cómo se mide | ⟦PENDIENTE⟧ |
-| Consistencia | % máximo de un día sobre el total, y si afecta evaluación o solo retiros | ⟦PENDIENTE⟧ |
-| Contratos máximos | Por tamaño de cuenta, y si escala (p. ej. mitad hasta superar un umbral) | ⟦PENDIENTE⟧ |
-| Horario de cierre | Hora límite de posiciones abiertas (zona horaria) | ⟦PENDIENTE⟧ |
-| Otras | Noticias, hedging, overnight, etc. | ⟦PENDIENTE⟧ |
+| Profit target | USD 3.000 | ⟦PENDIENTE⟧ |
+| Drawdown máximo | USD 2.000 o USD 2.500 según la fuente (**contradicción**) | ⟦PENDIENTE⟧ |
+| Tipo de drawdown | Trailing EOD (sobre saldo de cierre, no intradía), se congela al llegar a cierto saldo | ⟦PENDIENTE⟧ |
+| DLL | Select: ninguno · Growth: USD 1.250 (soft breach, pausa el día) | ⟦PENDIENTE⟧ |
+| Consistencia | Select: 40 % (mejor día ≤ 40 % de la ganancia total) | ⟦PENDIENTE⟧ |
+| Días mínimos | 3 | ⟦PENDIENTE⟧ |
+| Contratos máximos | 4 minis (equivalencia en micros a confirmar) | ⟦PENDIENTE⟧ |
+| Horario de cierre obligatorio | — | ⟦PENDIENTE⟧ |
+| Corte de día de trading | Para asignar la sesión Asia al día correcto (DLL y consistencia) | ⟦PENDIENTE⟧ |
+| Noticias | — | ⟦PENDIENTE⟧ |
+| Automatización | Según terceros, permitida con condiciones. Irrelevante para este diseño: **el sistema no envía órdenes** por decisión del trader | — |
 
-El sistema compara la fecha de verificación con la fecha actual y **bloquea las alertas** si pasaron más de ⟦PENDIENTE: días, sugerido 30⟧ días sin re-verificar.
+El sistema compara la fecha de verificación con la fecha actual y **bloquea las alertas** si pasaron más de ⟦PENDIENTE: días, sugerido 30⟧ días sin volver a verificar.
 
 ---
 
@@ -29,12 +36,12 @@ El sistema compara la fecha de verificación con la fecha actual y **bloquea las
 - Detección determinística de setups (modelos OIM, Continuación, Retroceso) portada desde Pine Script v5.
 - Estado de mercado por vela de 1 minuto (sin lookahead).
 - Motor de riesgo y tamaño en código.
-- Backtest walk-forward con holdout bloqueado, costos, deflated Sharpe, simulación de reglas Apex y Monte Carlo.
+- Backtest walk-forward con holdout bloqueado, costos, deflated Sharpe, simulación de reglas de la firma y Monte Carlo.
 - Filtro opcional (solo veto / baja de prioridad), sujeto a ablación y calibración.
 - Alertas por Telegram, dashboard local, journal, CSV para TradeZella, reporte diario, propuestas semanales.
 
 ### Excluido (explícitamente)
-- **Cualquier envío de órdenes a la cuenta Apex.** No existe módulo de broker con capacidad de orden.
+- **Cualquier envío de órdenes a la cuenta de la firma.** No existe módulo de broker con capacidad de orden.
 - Datos de order book / L2 (no hay histórico → no se usa).
 - Kelly o tamaño dinámico por confianza.
 - Que un modelo (filtro o Claude) genere señales, defina tamaño o modifique límites.
@@ -45,7 +52,7 @@ El sistema compara la fecha de verificación con la fecha actual y **bloquea las
 
 `EXECUTION_MODE ∈ {"alert_only", "paper"}`. Cualquier otro valor → el proceso no arranca.
 
-| Modo | Qué hace | Conexión a cuenta Apex |
+| Modo | Qué hace | Conexión a la cuenta Tradeify |
 |---|---|---|
 | `alert_only` | Detecta, filtra, aplica riesgo, calcula tamaño/stop/TP y envía alerta. El trader ejecuta manualmente en Tradovate y registra la ejecución. | Ninguna |
 | `paper` | Igual que arriba + simula el fill con las mismas reglas de costos del backtest y lleva su propia curva. | Ninguna |
@@ -54,7 +61,7 @@ El sistema compara la fecha de verificación con la fecha actual y **bloquea las
 1. `test_no_order_path`: escaneo estático del código — falla si aparece cualquier import/cliente/endpoint de envío de órdenes (Tradovate `order/placeorder`, `placeOSO`, `placeOCO`, `modifyorder`, `liquidateposition`, SDKs de brokers, etc.).
 2. `test_network_allowlist`: todo acceso de red pasa por un único cliente HTTP con allowlist de hosts (proveedor de datos, Telegram, y opcionalmente Ollama en localhost). Falla si un host no listado es contactado o si se instancia un cliente HTTP fuera de ese módulo.
 3. `test_execution_mode_enum`: cualquier valor distinto de los dos permitidos aborta el arranque.
-4. `test_no_credentials_for_broker`: la config no acepta variables de credenciales de Tradovate/Apex; si existen en `.env`, el proceso aborta.
+4. `test_no_credentials_for_broker`: la config no acepta variables de credenciales de broker/plataforma (Tradovate, NinjaTrader, Rithmic, Tradeify); si existen en `.env`, el proceso aborta.
 
 ---
 
@@ -66,7 +73,9 @@ Por cada modelo (OIM, Continuación, Retroceso):
 
 | Campo | Definición exigida |
 |---|---|
-| Timeframe(s) | TF de detección y TF de contexto ⟦PENDIENTE⟧ |
+| Timeframes | **Bias y FVG de contexto:** 4H, 30m, 15m (solo velas cerradas). **Ejecución:** 1m, 30s o 15s — regla exacta de cuál se usa en cada caso ⟦PENDIENTE: lo define el Pine⟧ |
+| Bias | Regla exacta por TF y cómo se combinan los tres (p. ej. 4H manda; 30m/15m deben coincidir) ⟦PENDIENTE⟧ |
+| FVG HTF como POI | Qué FVG de 4H/30m/15m cuentan (abiertos, mitigados al 50 %, invalidados por cierre) y cuántos se conservan ⟦PENDIENTE⟧ |
 | Definición de FVG | Velas involucradas, tamaño mínimo (ticks/ATR), si cuenta mecha o cuerpo |
 | Definición de iFVG | Qué cierre/penetración invierte el FVG (cierre más allá del borde vs. mecha) |
 | Definición de OIM | ⟦PENDIENTE: la define el código Pine⟧ |
@@ -75,7 +84,7 @@ Por cada modelo (OIM, Continuación, Retroceso):
 | Take profit | Regla exacta (R múltiple fijo, liquidez opuesta, etc.) y si hay parciales |
 | Vigencia de la orden | Cuántas velas vale el setup antes de cancelarse |
 | Invalidación | Condición exacta que anula el setup antes de la entrada |
-| Killzones habilitadas | Por modelo, en hora de Nueva York (America/New_York, con DST) ⟦PENDIENTE⟧ |
+| Killzones habilitadas | **NY AM** y **Asia**, en hora de Nueva York (America/New_York, con DST). Horarios exactos ⟦PENDIENTE: propuesta NY AM 09:30–11:00, Asia 20:00–00:00⟧ |
 
 **Paridad Pine ↔ Python (test obligatorio):**
 - Período común ⟦PENDIENTE⟧, mismo feed exportado desde TradingView (o mismas velas) para eliminar diferencias de datos.
@@ -85,7 +94,7 @@ Por cada modelo (OIM, Continuación, Retroceso):
 
 ---
 
-## 4. Estado de mercado (snapshot por vela de 1 m)
+## 4. Estado de mercado (snapshot por vela de ejecución: 1m / 30s / 15s)
 
 Calculado al **cierre** de la vela `t`, usando solo datos con timestamp `< t_decisión`. Todos los campos numéricos.
 
@@ -94,9 +103,10 @@ Calculado al **cierre** de la vela `t`, usando solo datos con timestamp `< t_dec
 | `price` | Cierre de la vela |
 | `rv_n` | Volatilidad realizada (desvío de retornos log de 1 m, ventana ⟦PENDIENTE, sugerido 30⟧) |
 | `atr_n` | ATR en puntos (ventana ⟦PENDIENTE⟧) |
-| `htf_trend` | −1/0/+1 en TF superior ⟦PENDIENTE: TF y regla, p. ej. estructura HH/HL en 15 m o pendiente de EMA⟧, solo velas HTF **cerradas** |
+| `bias_4h`, `bias_30m`, `bias_15m` | −1/0/+1 por TF según la regla de bias del Pine, solo con velas HTF **cerradas** |
+| `dist_fvg_htf_*` | Distancia al FVG abierto más cercano de 4H/30m/15m (arriba y abajo) y si el precio está dentro |
 | `kz_id`, `kz_min_from_start`, `kz_min_to_end` | Posición respecto de la killzone activa |
-| `min_to_cutoff` | Minutos al horario de corte Apex/propio |
+| `min_to_cutoff` | Minutos al horario de corte de la firma o propio |
 | `dist_pdh`, `dist_pdl` | Distancia en puntos a máximo/mínimo del día previo |
 | `dist_asia_h/l`, `dist_london_h/l` | Distancia a máximos/mínimos de sesiones (si se habilitan) |
 | `dist_swing_h/l` | Distancia al último swing confirmado (confirmación con N velas a la derecha → sin lookahead) |
@@ -107,13 +117,24 @@ Test: `test_no_lookahead` — se trunca el dataset en `t` y el snapshot en `t` d
 
 ## 5. Tamaño
 
-- Contratos fijos por instrumento: `CONTRACTS_MNQ` ⟦PENDIENTE⟧, `CONTRACTS_ES` ⟦PENDIENTE⟧.
-- `riesgo_usd = stop_pts × valor_punto × contratos + costos_estimados` (MNQ USD 2/pt, ES USD 50/pt; tick 0,25 → MNQ USD 0,50, ES USD 12,50).
-- Condición: `riesgo_usd ≤ min(RIESGO_MAX_USD, F × distancia_actual_al_trailing_DD)`.
-- Si no se cumple → **setup descartado** (motivo registrado). Nunca se achica el stop ni se baja contratos automáticamente.
-  - ⟦PENDIENTE: confirmá si querés que tampoco se bajen contratos (lectura literal de "contratos fijos") — es lo que asumo⟧.
+**Riesgo por trade:** 0,5 % a 1 % de la cuenta, calculado sobre el **saldo inicial de USD 50.000** (no sobre el saldo actual): USD 250 a USD 500.
 
-Parámetros: `RIESGO_MAX_USD` ⟦PENDIENTE⟧, `F` ⟦PENDIENTE, sugerido ≤ 0,25⟧.
+| Nivel | USD | Trades perdedores seguidos hasta agotar un DD de USD 2.000 | Con DD de USD 2.500 |
+|---|---|---|---|
+| 0,5 % | 250 | 8 | 10 |
+| 1 % | 500 | 4 | 5 |
+
+**Regla para elegir 0,5 % o 1 %:** tiene que ser determinística. ⟦PENDIENTE — propuesta: 0,5 % por defecto; 1 % solo si los tres bias (4H/30m/15m) están alineados y la entrada sale de un FVG de HTF. El backtest prueba "siempre 0,5 %" contra la regla, y cada variante suma al contador del deflated Sharpe⟧.
+
+**Cálculo:**
+- `presupuesto = min(nivel_usd, F × (saldo − piso_drawdown))`, con `F` ⟦PENDIENTE, sugerido 0,25⟧.
+- `contratos = floor(presupuesto / (stop_pts × valor_punto + costos_por_contrato))`, con tope en `MAX_CONTRATOS`.
+- Si `contratos < 1` → **setup descartado** y se registra el motivo. Nunca se achica el stop.
+- Valor por punto: MNQ USD 2 · ES USD 50 · (MES USD 5, si se habilita).
+
+**Atención — ES con este riesgo:** con USD 250, 1 ES solo admite un stop de unos 4,5 puntos después de costos. Casi todos los setups de ES se descartarían. Opciones ⟦PENDIENTE⟧: (a) operar solo MNQ, (b) usar MES en lugar de ES, (c) ES solo al 1 %.
+
+Nota: esto reemplaza "contratos fijos" de la v0.1. Ahora los contratos varían con el stop para mantener el riesgo en USD constante. Sigue sin haber Kelly ni tamaño por confianza.
 
 ---
 
@@ -124,18 +145,19 @@ Se evalúan en orden fijo; la primera que falla veta y se registra.
 | # | Regla | Parámetro |
 |---|---|---|
 | R0 | Kill switch activo → nada sale | archivo/flag + comando Telegram `/kill` (solo chat_id autorizado) |
-| R1 | Reglas Apex verificadas y vigentes (sección 0) | días máx. sin verificar |
+| R1 | Reglas de la firma verificadas y vigentes (sección 0) | días máx. sin verificar |
 | R2 | Dentro de killzone habilitada | killzones |
-| R3 | No a menos de N minutos del corte | `CUTOFF_BUFFER_MIN` ⟦PENDIENTE⟧ |
-| R4 | Contratos ≤ máximo propio ≤ máximo Apex | `MAX_CONTRATOS` ⟦PENDIENTE⟧ |
-| R5 | Pérdida del día < DLL propio (más conservador que Apex) | `DLL_PROPIO_USD` ⟦PENDIENTE⟧ |
+| R3 | No a menos de N minutos del corte ni del fin de la killzone | `CUTOFF_BUFFER_MIN` ⟦PENDIENTE⟧ |
+| R3b | Consistencia: no alertar si un trade ganador llevaría el día por encima del % permitido de la ganancia total (en eval, sobre el profit target) | según plan |
+| R4 | Contratos ≤ máximo propio ≤ máximo de la firma (en equivalente mini) | `MAX_CONTRATOS` ⟦PENDIENTE⟧ |
+| R5 | Pérdida del día < DLL propio. Aplica aunque el plan no tenga DLL | `DLL_PROPIO_USD` ⟦PENDIENTE: sugerido 2 × riesgo por trade⟧ |
 | R6 | Trades del día < máximo | `MAX_TRADES_DIA` ⟦PENDIENTE⟧ |
 | R7 | Pérdidas seguidas < K (bloqueo hasta el día siguiente) | `K` ⟦PENDIENTE⟧ |
 | R8 | Riesgo del trade dentro de límites de tamaño (sección 5) | — |
 | R9 | Sin posición abierta / alerta pendiente sin resolver | ⟦PENDIENTE: ¿se permite más de una posición simultánea?⟧ |
 | R10 | Filtro opcional (solo puede vetar o bajar prioridad) | — |
 
-- La configuración de riesgo se carga una vez, se valida (`DLL_PROPIO < DLL_APEX`, `MAX_CONTRATOS ≤ máx Apex`, etc.) y queda **inmutable** en memoria. Cambiarla exige reinicio y queda registrado.
+- La configuración de riesgo se carga una vez, se valida (`DLL_PROPIO < DLL de la firma` si existe, `MAX_CONTRATOS ≤ máx de la firma`, etc.) y queda **inmutable** en memoria. Cambiarla exige reinicio y queda registrado.
 - Noticias/headlines: si se ingieren, son **datos** (p. ej. bandera "evento de alto impacto en ±X min" desde un calendario) y solo pueden vetar. Nunca se interpreta texto como instrucción. ⟦PENDIENTE: ¿querés veto por calendario económico? ¿fuente?⟧
 - Para R5–R7 en `alert_only`, el sistema necesita saber qué ejecutaste y el resultado → ver sección 10.
 
@@ -145,17 +167,18 @@ Se evalúan en orden fijo; la primera que falla veta y se registra.
 
 | Ítem | Especificación |
 |---|---|
-| Datos | 1 m MNQ y ES, ≥ 2 años, con regímenes distintos. Proveedor ⟦PENDIENTE⟧, período ⟦PENDIENTE⟧ |
+| Datos | MNQ y ES, ≥ 2 años, con regímenes distintos. **Hace falta resolución sub-minuto** (ticks u OHLCV de 1 s) para construir velas de 30 s y 15 s y resolver stop/TP dentro de la vela. Con datos de 1 m solo se puede backtestear la ejecución en 1 m. Proveedor ⟦PENDIENTE⟧, período ⟦PENDIENTE⟧ |
+| Latencia humana | Entre la alerta y tu orden pasan segundos. Se modela un retraso de ⟦PENDIENTE: s, sugerido medirlo en paper⟧ y la entrada se toma al precio posterior a ese retraso. Una entrada límite que el precio ya pasó cuenta como no ejecutada. En 15 s este efecto puede cambiar el resultado |
 | Contratos continuos | Regla de roll ⟦PENDIENTE: sugerido roll por volumen / fecha fija, precios sin ajustar dentro de cada contrato⟧ |
 | Costos | Comisión por lado ⟦PENDIENTE USD/contrato⟧ + slippage ⟦PENDIENTE ticks⟧ en entrada y en stop (TP límite sin slippage, pero solo se llena si el precio **cruza** el TP, no si lo toca — ⟦PENDIENTE: confirmar⟧) |
-| Ambigüedad intrabarra | Stop y TP en la misma vela → stop. Entrada y stop en la misma vela → stop |
+| Ambigüedad intrabarra | Stop y TP en la misma vela de la menor resolución disponible → stop. Entrada y stop en la misma vela → stop |
 | Walk-forward | Ventanas de ajuste/validación ⟦PENDIENTE: sugerido 6 m / 2 m, rolling⟧ |
 | Holdout | Últimos `N` meses ⟦PENDIENTE: sugerido 6⟧, bloqueado por hash; se evalúa **una vez**; el uso queda registrado y un segundo intento falla |
 | Registro de variantes | Cada corrida con parámetros distintos suma al contador de pruebas → Deflated Sharpe (Bailey & López de Prado) |
 | Métricas | Expectancy USD/trade (neta), payoff ratio, N trades, máx. DD, peor racha; win rate solo junto al payoff; Sharpe y DSR |
-| Simulación Apex | Trailing DD, DLL, máx. contratos, consistencia, cierre forzado al corte, sobre la curva por trade **y** por equity intradía (MAE) si el trailing es intradía |
-| Monte Carlo | ≥ 10.000 permutaciones/bootstraps del orden de trades → P(sobrevivir), P(alcanzar objetivo ⟦PENDIENTE: profit target⟧) |
-| Aceptación | Expectancy > 0 neta en holdout, con ≥ `MIN_TRADES` ⟦PENDIENTE⟧ y P(quemar) < `X %` ⟦PENDIENTE⟧. Si no cumple: se reporta como **NO APTO**, sin ajustes posteriores sobre el holdout |
+| Simulación de la firma | Drawdown trailing EOD con congelamiento, DLL si aplica, máx. contratos, consistencia, días mínimos, cierre forzado al corte. Se evalúa el **pase de la evaluación**: llegar a USD 3.000 (a confirmar) cumpliendo consistencia antes de tocar el piso |
+| Monte Carlo | ≥ 10.000 permutaciones/bootstraps del orden de trades → P(pasar la eval), P(quemar), trades y días esperados hasta el resultado |
+| Aceptación | Expectancy > 0 neta en holdout, con ≥ `MIN_TRADES` ⟦PENDIENTE⟧, P(quemar) < `X %` ⟦PENDIENTE⟧ y P(pasar) reportada. Si no cumple: se reporta como **NO APTO**, sin ajustes posteriores sobre el holdout |
 
 Los números los produce el harness; Claude no califica resultados.
 
@@ -184,9 +207,9 @@ Token y chat_id solo en `.env`; los logs enmascaran secretos (test que lo verifi
 ## 10. Registro de ejecuciones manuales
 
 Necesario para dashboard, reglas R5–R7 y journal. ⟦PENDIENTE: elegí una⟧
-- **A (recomendada):** botones en Telegram "Tomé / No tomé" + import del CSV de fills de Tradovate al final del día para conciliar precios reales.
+- **A (recomendada):** botones en Telegram "Tomé / No tomé" + import del CSV de fills de tu plataforma al final del día para conciliar precios reales.
 - **B:** carga manual en el dashboard.
-- Se descarta cualquier conexión API a la cuenta Apex, incluso de solo lectura, salvo que la autorices explícitamente y Apex lo permita.
+- Se descarta cualquier conexión API a la cuenta Tradeify, incluso de solo lectura, salvo que la autorices explícitamente.
 
 ---
 
@@ -194,7 +217,7 @@ Necesario para dashboard, reglas R5–R7 y journal. ⟦PENDIENTE: elegí una⟧
 
 - Cada señal (tomada o no): snapshot, resultado de cada regla/filtro con motivo, alerta enviada, ejecución, resultado (y resultado hipotético si no se tomó).
 - Almacenamiento: SQLite local.
-- CSV formato Tradovate para TradeZella con P&L por FIFO. ⟦PENDIENTE: pasame un CSV de ejemplo exportado de tu Tradovate (sin datos sensibles) para replicar columnas exactas⟧.
+- CSV para TradeZella con P&L por FIFO, en el formato de tu plataforma. ⟦PENDIENTE: ¿con qué plataforma operás la cuenta Tradeify (Tradovate, NinjaTrader, TradingView, otra)? Pasame un CSV de ejemplo exportado, sin datos sensibles⟧.
 
 ---
 
@@ -213,10 +236,10 @@ Por señal: detectada → reglas/filtros (pasó/no y por qué) → alerta → ej
 
 ## 14. Deploy
 
-VPS ⟦PENDIENTE: proveedor/SO⟧ con `systemd` (restart automático) y timers que activan el proceso solo en killzones. Alertas por Telegram ante caída/reinicio.
+VPS ⟦PENDIENTE: proveedor/SO⟧ con `systemd` (reinicio automático) y timers que lo activan solo en NY AM y Asia (con margen previo para cargar el contexto HTF de 4H/30m/15m). Alertas por Telegram ante caída/reinicio.
 
 ---
 
 ## 15. Datos operativos en vivo (faltante crítico del brief)
 
-Para `alert_only`/`paper` hace falta un **feed en tiempo real de 1 m** (o ticks) de MNQ/ES. ⟦PENDIENTE: fuente en vivo y si tenés licencia de datos CME para uso no-display/API⟧. Sin esto el sistema solo puede backtestear.
+Para `alert_only`/`paper` hace falta un **feed en tiempo real de ticks** (o de 1 s) de MNQ/ES para armar velas de 15 s y 30 s. ⟦PENDIENTE: fuente en vivo y si tenés licencia de datos CME para uso no-display/API⟧. Sin esto el sistema solo puede backtestear.
