@@ -1,6 +1,6 @@
-# SPEC — Sistema de señales iFVG/OIM para MNQ/ES
+# SPEC — Sistema de señales iFVG/OIM para MNQ
 
-**Estado:** BORRADOR v0.2 (Tradeify 50K eval) — pendiente de aprobación. No se escribe código hasta aprobar Spec → Arquitectura → Plan.
+**Estado:** BORRADOR v0.3 (Tradeify 50K eval · solo MNQ) — pendiente de aprobación. No se escribe código hasta aprobar Spec → Arquitectura → Plan.
 **Convención:** todo valor marcado `⟦PENDIENTE: …⟧` lo tiene que definir el trader. El sistema **no arranca** (falla en validación de config) si queda algún pendiente sin completar.
 
 ---
@@ -8,6 +8,9 @@
 ## 0. Cuenta y reglas de la firma (bloqueante)
 
 **Firma:** Tradeify · **Cuenta:** 50K · **Fase:** evaluación · **Modo:** solo alertas, el trader ejecuta manualmente.
+**Instrumento único:** Micro E-mini Nasdaq-100 (MNQ), CME. Contrato activo hoy: **MNQZ2026** (diciembre 2026). Tick 0,25 = USD 0,50 · punto = USD 2. ES/MES quedan fuera de alcance.
+
+**Roll en vivo:** el sistema lee el contrato activo de `config/contracts.yaml` (símbolo + fecha de roll que carga el trader) y avisa por Telegram ⟦PENDIENTE: N días, sugerido 5⟧ días antes del roll. Las alertas siempre indican el símbolo exacto (p. ej. `MNQZ2026`). Si la fecha de roll ya pasó y el contrato no se actualizó, **no salen alertas**. Fecha de roll a MNQH2027 ⟦PENDIENTE: confirmala con el calendario de CME y la práctica de tu plataforma⟧.
 **Plan:** ⟦PENDIENTE: Select / Growth / Lightning / otro⟧. Cambian el drawdown, el DLL y la consistencia.
 
 Valores de referencia encontrados en fuentes de terceros (help.tradeify.co no fue accesible desde este entorno). **No son vinculantes**: las fuentes se contradicen y el trader los confirma en el sitio oficial antes de cargarlos en `config/firm_rules.yaml`, con fecha de verificación y URL.
@@ -130,9 +133,9 @@ Test: `test_no_lookahead` — se trunca el dataset en `t` y el snapshot en `t` d
 - `presupuesto = min(nivel_usd, F × (saldo − piso_drawdown))`, con `F` ⟦PENDIENTE, sugerido 0,25⟧.
 - `contratos = floor(presupuesto / (stop_pts × valor_punto + costos_por_contrato))`, con tope en `MAX_CONTRATOS`.
 - Si `contratos < 1` → **setup descartado** y se registra el motivo. Nunca se achica el stop.
-- Valor por punto: MNQ USD 2 · ES USD 50 · (MES USD 5, si se habilita).
-
-**Atención — ES con este riesgo:** con USD 250, 1 ES solo admite un stop de unos 4,5 puntos después de costos. Casi todos los setups de ES se descartarían. Opciones ⟦PENDIENTE⟧: (a) operar solo MNQ, (b) usar MES en lugar de ES, (c) ES solo al 1 %.
+- Valor por punto MNQ: USD 2.
+- Ejemplo: stop de 20 puntos = USD 40 por contrato + costos → con USD 250, 6 contratos; con USD 500, 12 (si el máximo lo permite).
+- Límite de contratos: el máximo de la firma suele expresarse en minis. Equivalencia de micros ⟦PENDIENTE: confirmar con Tradeify, p. ej. 4 minis = 40 micros⟧. Con stops cortos (p. ej. 5 puntos al 1 % = 50 contratos) **este tope sí se puede activar**: si lo hace, se usa el tope y el riesgo real queda por debajo del nivel; no se agranda el stop.
 
 Nota: esto reemplaza "contratos fijos" de la v0.1. Ahora los contratos varían con el stop para mantener el riesgo en USD constante. Sigue sin haber Kelly ni tamaño por confianza.
 
@@ -167,9 +170,9 @@ Se evalúan en orden fijo; la primera que falla veta y se registra.
 
 | Ítem | Especificación |
 |---|---|
-| Datos | MNQ y ES, ≥ 2 años, con regímenes distintos. **Hace falta resolución sub-minuto** (ticks u OHLCV de 1 s) para construir velas de 30 s y 15 s y resolver stop/TP dentro de la vela. Con datos de 1 m solo se puede backtestear la ejecución en 1 m. Proveedor ⟦PENDIENTE⟧, período ⟦PENDIENTE⟧ |
+| Datos | MNQ, ≥ 2 años, con regímenes distintos. **Hace falta resolución sub-minuto** (ticks u OHLCV de 1 s) para construir velas de 30 s y 15 s y resolver stop/TP dentro de la vela. Con datos de 1 m solo se puede backtestear la ejecución en 1 m. Proveedor ⟦PENDIENTE⟧, período ⟦PENDIENTE⟧ |
 | Latencia humana | Entre la alerta y tu orden pasan segundos. Se modela un retraso de ⟦PENDIENTE: s, sugerido medirlo en paper⟧ y la entrada se toma al precio posterior a ese retraso. Una entrada límite que el precio ya pasó cuenta como no ejecutada. En 15 s este efecto puede cambiar el resultado |
-| Contratos continuos | Regla de roll ⟦PENDIENTE: sugerido roll por volumen / fecha fija, precios sin ajustar dentro de cada contrato⟧ |
+| Contratos continuos | Serie de contratos trimestrales de MNQ (H/M/U/Z) unidos con la misma regla de roll que usás en vivo; precios **sin ajustar** dentro de cada contrato y sin señales que crucen el roll (los FVG HTF se recalculan sobre el contrato nuevo) ⟦PENDIENTE: confirmar regla — sugerido roll por fecha fija, ~8 días antes del vencimiento⟧ |
 | Costos | Comisión por lado ⟦PENDIENTE USD/contrato⟧ + slippage ⟦PENDIENTE ticks⟧ en entrada y en stop (TP límite sin slippage, pero solo se llena si el precio **cruza** el TP, no si lo toca — ⟦PENDIENTE: confirmar⟧) |
 | Ambigüedad intrabarra | Stop y TP en la misma vela de la menor resolución disponible → stop. Entrada y stop en la misma vela → stop |
 | Walk-forward | Ventanas de ajuste/validación ⟦PENDIENTE: sugerido 6 m / 2 m, rolling⟧ |
@@ -242,4 +245,4 @@ VPS ⟦PENDIENTE: proveedor/SO⟧ con `systemd` (reinicio automático) y timers 
 
 ## 15. Datos operativos en vivo (faltante crítico del brief)
 
-Para `alert_only`/`paper` hace falta un **feed en tiempo real de ticks** (o de 1 s) de MNQ/ES para armar velas de 15 s y 30 s. ⟦PENDIENTE: fuente en vivo y si tenés licencia de datos CME para uso no-display/API⟧. Sin esto el sistema solo puede backtestear.
+Para `alert_only`/`paper` hace falta un **feed en tiempo real de ticks** (o de 1 s) de MNQ para armar velas de 15 s y 30 s. ⟦PENDIENTE: fuente en vivo y si tenés licencia de datos CME para uso no-display/API⟧. Sin esto el sistema solo puede backtestear.
